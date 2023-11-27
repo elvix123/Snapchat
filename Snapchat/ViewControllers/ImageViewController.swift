@@ -1,42 +1,93 @@
-//
-//  ImageViewController.swift
-//  Snapchat
-//
-//  Created by Elvis Quecara Cruz on 14/11/23.
-//
+// ImageViewController.swift
 
 import UIKit
 import FirebaseStorage
+import AVFoundation
 
 class ImageViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     
     var imagePicker = UIImagePickerController()
     
+    var imagenID = NSUUID().uuidString
+    
+    var grabarAudio: AVAudioRecorder?
+    
+    var reproducirAudio: AVAudioPlayer?
+    
+    var audioURL: URL?
     
     @IBOutlet weak var imageView: UIImageView!
-    
-    
     @IBOutlet weak var descripcionTextField: UITextField!
-    
-    
     @IBOutlet weak var elegirContactoBoton: UIButton!
+    @IBOutlet weak var grabarButton: UIButton!
+    @IBOutlet weak var audioTextField: UITextField!
+    @IBOutlet weak var reproducirButton: UIButton!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         imagePicker.delegate = self
         elegirContactoBoton.isEnabled = false
-
-        // Do any additional setup after loading the view.
+        configurarGrabacion()
+        reproducirButton.isEnabled = false
     }
     
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        let image = info[UIImagePickerController.InfoKey.originalImage] as? UIImage
-        imageView.image = image
-        imageView.backgroundColor = UIColor.clear
-        elegirContactoBoton.isEnabled = true
+    func configurarGrabacion() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(AVAudioSession.Category.playAndRecord, mode: AVAudioSession.Mode.default, options: [])
+            try session.overrideOutputAudioPort(.speaker)
+            try session.setActive(true)
+            
+            let basePath: String = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
+            let pathComponents = [basePath, "audio.m4a"]
+            audioURL = NSURL.fileURL(withPathComponents: pathComponents)!
+            
+            print("*******************")
+            print(audioURL!)
+            print("*******************")
+            
+            var settings: [String: AnyObject] = [:]
+            settings[AVFormatIDKey] = Int(kAudioFormatMPEG4AAC) as AnyObject?
+            settings[AVSampleRateKey] = 44100.0 as AnyObject?
+            settings[AVNumberOfChannelsKey] = 2 as AnyObject?
+            
+            grabarAudio = try AVAudioRecorder(url: audioURL!, settings: settings)
+            grabarAudio!.prepareToRecord()
+        } catch let error as NSError {
+            print(error)
+        }
+    }
+    
+    @IBAction func grabarTapped(_ sender: Any) {
+        if grabarAudio!.isRecording {
+            grabarAudio?.stop()
+            grabarButton.setTitle("GRABAR", for: .normal)
+            reproducirButton.isEnabled = true
+        } else {
+            grabarAudio?.record()
+            grabarButton.setTitle("DETENER", for: .normal)
+            reproducirButton.isEnabled = false
+        }
+    }
+    
+    @IBAction func reproducirTapped(_ sender: Any) {
+        do {
+            try reproducirAudio = AVAudioPlayer(contentsOf: audioURL!)
+            reproducirAudio!.play()
+            print("Reproduciendo")
+        } catch {
+            // Handle audio playback error
+        }
+    }
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+        if let image = info[UIImagePickerController.InfoKey.originalImage] as? UIImage {
+            imageView.image = image
+            imageView.backgroundColor = UIColor.clear
+            elegirContactoBoton.isEnabled = true
+        }
         imagePicker.dismiss(animated: true, completion: nil)
     }
-    
     
     @IBAction func camaraTapped(_ sender: Any) {
         imagePicker.sourceType = .savedPhotosAlbum
@@ -44,45 +95,81 @@ class ImageViewController: UIViewController, UIImagePickerControllerDelegate, UI
         present(imagePicker, animated: true, completion: nil)
     }
     
-    
     @IBAction func elegirContactoTapped(_ sender: Any) {
         self.elegirContactoBoton.isEnabled = false
-        let imagenesFolder = Storage.storage().reference().child("imagenes")
-        let imagenData = imageView.image?.jpegData(compressionQuality: 0.50)
-        let cargarImagen = imagenesFolder.child("\(NSUUID().uuidString).jpg").putData(imagenData!, metadata: nil) {
-             (metadata, error) in
-            if error != nil {
-                self.mostrarAlerta(titulo: "Error", mensaje: "Se producjo un error al subir la imagen. Verifique su conexion a internet y vuelve a intentarlo", accion: "Aceptar")
-                self.elegirContactoBoton.isEnabled = true
-                print("Ocurrio un error al subir imagen: \(error) ")
-            }else{
-                self.performSegue(withIdentifier: "seleccionarContactoSegue", sender: nil)
-            }
-        }
-        let alertaCarga = UIAlertController(title: "Cargando Imagen ..", message: "0%", preferredStyle: .alert)
-        let progresoCarga : UIProgressView = UIProgressView(progressViewStyle: .default)
-        cargarImagen.observe(.progress) {(snapshot) in
-            let porcentaje = Double(snapshot.progress!.completedUnitCount)
-            / Double(snapshot.progress!.totalUnitCount)
-            print(porcentaje)
-            progresoCarga.setProgress(Float(porcentaje), animated: true)
-            progresoCarga.frame = CGRect(x: 10, y: 70, width: 250, height: 0)
-            alertaCarga.message = String(round(porcentaje*100.0)) + " %"
-            if porcentaje>=1.0 {
-                alertaCarga.dismiss(animated: true,completion: nil)
-            }
-            
-        }
-            let btnOK = UIAlertAction(title: "Aceptar", style: .default, handler: nil)
-            alertaCarga.addAction(btnOK)
-            alertaCarga.view.addSubview(progresoCarga)
-            present(alertaCarga,animated: true, completion: nil)
-    }
         
-   
+        guard let image = imageView.image,
+              let imageData = image.jpegData(compressionQuality: 0.50) else {
+            // Handle error: Unable to get image or image data
+            return
+        }
+
+        let imagenesFolder = Storage.storage().reference().child("imagenes")
+        let cargarImagen = imagenesFolder.child("\(imagenID).jpg")
+        
+        cargarImagen.putData(imageData, metadata: nil) { (metadata, error) in
+            if error != nil {
+                // Handle image upload error
+                self.mostrarAlerta(titulo: "Error", mensaje: "Se produjo un error al subir la imagen. Verifique su conexión a internet y vuelva a intentarlo", accion: "Aceptar")
+                self.elegirContactoBoton.isEnabled = true
+                return
+            } else {
+                cargarImagen.downloadURL { (url, error) in
+                    guard let imagenURL = url else {
+                        // Handle image URL retrieval error
+                        self.mostrarAlerta(titulo: "Error", mensaje: "Se produjo un error al obtener la información de la imagen", accion: "Cancelar")
+                        self.elegirContactoBoton.isEnabled = true
+                        return
+                    }
+                    
+                    // Update the audioURL property before uploading audio
+                    self.uploadAudio(imagenURL: imagenURL)
+                }
+            }
+        }
+    }
+    
+    func uploadAudio(imagenURL: URL) {
+        guard let audioUrl = audioURL else {
+            return
+        }
+        
+        let audiosFolder = Storage.storage().reference().child("audios")
+        let audioData = try? Data(contentsOf: audioUrl)
+        let uploadAudio = audiosFolder.child("\(imagenID).m4a")
+        
+        uploadAudio.putData(audioData!, metadata: nil) { (metadata, error) in
+            if let error = error {
+                // Handle audio upload error
+                self.mostrarAlerta(titulo: "Error", mensaje: "Se produjo un error al subir el audio. Verifique su conexión a internet y vuelva a intentarlo", accion: "Aceptar")
+                return
+            } else {
+                uploadAudio.downloadURL { (url, error) in
+                    guard let audioDownloadURL = url else {
+                        // Handle audio URL retrieval error
+                        self.mostrarAlerta(titulo: "Error", mensaje: "Se produjo un error al obtener la URL del audio", accion: "Aceptar")
+                        return
+                    }
+                    
+                    // Call the function to perform segue with the obtained audio URL
+                    self.performSegue(withIdentifier: "seleccionarContactoSegue", sender: (imagenURL, audioDownloadURL))
+                }
+            }
+        }
+    }
     
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-       
+        if segue.identifier == "seleccionarContactoSegue" {
+            let siguienteVC = segue.destination as! ElegirUsuarioViewController
+            
+            if let (imagenURL, audioURL) = sender as? (URL, URL) {
+                siguienteVC.imagenURL = imagenURL.absoluteString
+                siguienteVC.descrip = descripcionTextField.text!
+                siguienteVC.audioname = audioTextField.text!
+                siguienteVC.imagenID = imagenID
+                siguienteVC.audioURL = audioURL
+            }
+        }
     }
     
     func mostrarAlerta(titulo: String, mensaje: String, accion: String) {
@@ -91,16 +178,4 @@ class ImageViewController: UIViewController, UIImagePickerControllerDelegate, UI
         alerta.addAction(btnCANCELOK)
         present(alerta, animated: true, completion: nil)
     }
-    
-
-    /*
-    // MARK: - Navigation
-
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destination.
-        // Pass the selected object to the new view controller.
-    }
-    */
-
 }

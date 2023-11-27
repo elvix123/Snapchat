@@ -22,6 +22,11 @@ class ElegirUsuarioViewController: UIViewController, UITableViewDataSource, UITa
     
     
     var usuarios:[Usuario] = []
+    var imagenURL = ""
+    var descrip = ""
+    var imagenID = ""
+    var audioname = ""
+    var audioURL: URL?
     
     
     
@@ -61,15 +66,24 @@ class ElegirUsuarioViewController: UIViewController, UITableViewDataSource, UITa
         
         return cell
     }
-   
-    /*
-    // MARK: - Navigation
-
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destination.
-        // Pass the selected object to the new view controller.
+    
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        
+        let usuario = usuarios[indexPath.row]
+        
+        
+        
+        
+        let snap = ["from": Auth.auth().currentUser?.email, "descripcion": descrip, "imagenURL": imagenURL, "imagenID" : imagenID, "nameaudio": audioname,  "audioURL": audioURL?.absoluteString]
+        
+        
+        Database.database().reference().child("usuario").child(usuario.uid).child("snaps")
+            .childByAutoId().setValue(snap)
+        navigationController?.popViewController(animated: true)
     }
-    */
+   
+   
+    
+    
 
 }
